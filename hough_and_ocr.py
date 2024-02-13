@@ -28,6 +28,33 @@ def find_closest_match(ocr_result, database):
 
     return result
 
+def crop_image_with_coordinates(image, coordinates):
+    """
+    이미지에서 주어진 좌표에 해당하는 영역을 자릅니다.
+    
+    Args:
+    - image: 원본 이미지
+    - coordinates: 4개의 좌표 [x1, y1, x2, y2, x3, y3, x4, y4] (좌측 상단부터 시계 방향으로)
+    
+    Returns:
+    - cropped_image: 잘린 영역 이미지
+    """
+    pts = np.array(coordinates, np.int32)
+    pts = pts.reshape((-1,1,2))
+    mask = np.zeros(image.shape, dtype=np.uint8)
+    cv2.fillPoly(mask, [pts], (255,255,255))
+    masked_image = cv2.bitwise_and(image, mask)
+    rect = cv2.boundingRect(pts)
+    x,y,w,h = rect
+    cropped_image = masked_image[y:y+h, x:x+w].copy()
+
+    return cropped_image
+
+    # cv2.imshow('cropped_image', cropped_image)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    
+
 # Tesseract OCR 실행 파일 경로 설정
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
@@ -40,7 +67,7 @@ with open(input_file_path, 'r', encoding='utf-8') as file:
 resource_names_list = remove_spaces_and_whitespace(resource_names_list)
 
 # 이미지 파일 읽기
-image = cv2.imread(r'data\alib.jpg')
+image = cv2.imread(r'data\lib2.jpg')
 
 # 이미지 사이즈 조정
 scale_percent = 30  # 이미지 크기를 줄일 비율 (원본의 50%로 줄임)
@@ -60,8 +87,10 @@ edges = cv2.Canny(blurred_image, 50, 10, apertureSize=3)
 # 허프 변환을 적용하여 직선 검출
 lines = cv2.HoughLines(edges, 1, np.pi / 180, threshold=220)
 
-#############################################################
 if lines is not None:
+    upper_line_x = []
+    under_line_x = []
+
     splitted_images = []
     vertical_lines_x = []
     line_endpoints = []
@@ -95,56 +124,48 @@ if lines is not None:
                 # 선의 길이가 150 이상인 경우에만 그리기
                 if line_length >= 5:
                     cv2.line(image, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                    vertical_lines_x.append(x0)
-                    # 결과 이미지를 화면에 표시
-                    # cv2.imshow('Hough Line Detection', image)
-                    # cv2.waitKey(0)
-                    # cv2.destroyAllWindows()
 
-            
+                    upper_line_x.append(x1)
+                    under_line_x.append(x2)
 
-    vertical_lines_x.sort()
+    upper_line_x.insert(0, 0)
+    under_line_x.insert(0, 0)
 
-    filtered_lines_x = [vertical_lines_x[0]]
-    for x in vertical_lines_x[1:]:
-        if x - filtered_lines_x[-1] >= 10:  # 거리가 10 이상인 경우에만 추가
-            filtered_lines_x.append(x)
-    
+    upper_line_x.sort()
+    under_line_x.sort()
+
+    print(upper_line_x)
+    print(under_line_x)
+
 
     # 결과 이미지를 화면에 표시
     cv2.imshow('Hough Line Detection', image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-
-    # 이미지 분할
-    prev_x = 0
-    for x in filtered_lines_x:
-        splitted_image = image[:, int(prev_x):int(x)]
-        splitted_images.append(splitted_image)
-        prev_x = x
-    # 마지막 세그먼트 추가
-    splitted_images.append(image[:, int(prev_x):])
-
-    # for idx, img in enumerate(splitted_images):
-        # scale_percent = 200 # 이미지 크기를 줄일 비율 (원본의 50%로 줄임)
-        # width = int(img.shape[1] * scale_percent / 100)
-        # height = int(img.shape[0] * scale_percent / 100)
-        # img = cv2.resize(img, (width, height))
-
-        # cv2.imshow(f'Segment {idx+1}', img)
-        # cv2.waitKey(0)  # 사용자가 키를 누를 때까지 대기
-        # cv2.destroyAllWindows()  # 모든 창 닫기
     
-    # 분할된 각 이미지에 대해 OCR 진행
-    for idx, img in enumerate(splitted_images):
-        kernel = np.ones((5, 5), np.uint8)
-        eroded_image = cv2.erode(img, kernel, iterations=10)
-        cv2.imshow(f'Segment {idx+1}', img)
-        cv2.waitKey(0)  # 사용자가 키를 누를 때까지 대기
-        cv2.destroyAllWindows()  # 모든 창 닫기
-        text = pytesseract.image_to_string(img, config='--oem 3 --psm 6 -l kor')
-        text = text.replace(" ", "")
-        text = text.replace("\n", "")
-        if text:
-            print("ocr 결과 : ", text)
-            print("가장 유사한 제목 : ", find_closest_match(text, resource_names_list))
+    for i in range(len(upper_line_x)-1):
+        if (under_line_x[i] < 0):
+            under_line_x[i] = 0
+        if (upper_line_x[i] < 0):
+            upper_line_x[i] = 0
+
+        coordinates = [upper_line_x[i], 0, upper_line_x[i+1], 0, under_line_x[i+1], image.shape[0], under_line_x[i], image.shape[0]]
+        if(upper_line_x[i+1]-upper_line_x[i]>30):
+            cropped_image = crop_image_with_coordinates(image, coordinates)
+        
+            kernel = np.ones((1, 1), np.uint8)
+            eroded_image = cv2.erode(crop_image_with_coordinates(image, coordinates), kernel, iterations=3)
+
+            # cv2.imshow(f'Segment {i}', eroded_image)
+            # cv2.waitKey(0)  # 사용자가 키를 누를 때까지 
+            # cv2.destroyAllWindows()  # 모든 창 닫기
+
+            text = pytesseract.image_to_string(eroded_image, config='--oem 3 --psm 6 -l kor')
+            text = text.replace(" ", "")
+            text = text.replace("\n", "")
+            if text:
+                print("ocr 결과 : ", text)
+                print("가장 유사한 제목 : ", find_closest_match(text, resource_names_list))
+                print("\n")
+            else:
+                print("인식된 텍스트 없음")
