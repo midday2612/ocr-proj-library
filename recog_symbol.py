@@ -1,5 +1,7 @@
 import cv2
 import numpy as np
+from PIL import Image
+
 def draw_yellow_rectangles(image_path):
     # 이미지 로드
     image = cv2.imread(image_path)
@@ -43,7 +45,7 @@ def draw_yellow_rectangles(image_path):
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     
     # 노란색 범위 정의 (HSV)
-    lower_yellow = np.array([15, 100, 100])
+    lower_yellow = np.array([20, 100, 100])
     upper_yellow = np.array([35, 255, 255])
     
     # 노란색에 해당하는 영역 찾기
